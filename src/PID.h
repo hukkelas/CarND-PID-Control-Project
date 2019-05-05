@@ -1,5 +1,8 @@
 #ifndef PID_H
 #define PID_H
+#include <vector>
+
+using std::vector;
 
 class PID {
  public:
@@ -31,6 +34,18 @@ class PID {
    */
   double TotalError();
 
+  /**
+   * Updates the twiddle optimizer
+   */
+  void updateTwiddle(double err);
+
+  /**
+   * Calculates the predicted steering angle
+   */
+  double nextSteeringAngle(double cte, double prev_cte, double int_cte);
+  double best_err;
+  bool twiddle_converged = true;
+
  private:
   /**
    * PID Errors
@@ -42,9 +57,20 @@ class PID {
   /**
    * PID Coefficients
    */ 
-  double Kp;
-  double Ki;
-  double Kd;
+  vector<double> p;
+
+  vector<double> cte_errors;
+
+  // Twiddle parameters
+  
+  int twiddle_state = -1;
+  int current_twiddle_parameter = 0;
+  
+  vector<double> dp = {1, 1, .0001};
+  double twiddle_tolerance = 0.001;
+
+  void shiftTwiddleParameter();
+
 };
 
 #endif  // PID_H

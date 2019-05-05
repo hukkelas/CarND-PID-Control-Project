@@ -34,11 +34,24 @@ int main() {
   uWS::Hub h;
 
   PID pid;
+  // [2.9331227688652457, 10.326589894591526, 0.49316041639454505]
+  // Trained hyperparameters
+  pid.Init(0.660301, 0.00120462, 15.3279);
+
+  // Rough initial parameters
+  //pid.Init(1.0, 0.00004, 10.0);
+
+
   /**
    * TODO: Initialize the pid variable.
    */
+  double prev_cte = 0;
+  double cte_sum = 0;
+  double int_cte = 0;
+  int event_count = 0;
+  int num_events_before_twiddle = 6000;
 
-  h.onMessage([&pid](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length, 
+  h.onMessage([&int_cte, &num_events_before_twiddle, &event_count, &cte_sum, &prev_cte, &pid](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length, 
                      uWS::OpCode opCode) {
     // "42" at the start of the message means there's a websocket message event.
     // The 4 signifies a websocket message
@@ -65,15 +78,43 @@ int main() {
            */
           
           // DEBUG
-          std::cout << "CTE: " << cte << " Steering Value: " << steer_value 
-                    << std::endl;
+          // Track CTE sum
+          int_cte += cte;
+          if(event_count >= num_events_before_twiddle/2){
+            cte_sum += cte*cte;
+          }
+          steer_value = pid.nextSteeringAngle(cte, prev_cte, int_cte);
+          prev_cte = cte;
+          //steer_value =  - pid.Kp * cte - pid.Kd * (cte - prev_cte) - pid.Ki * cte_sum;
+          //std::cout << "CTE: " << cte << " Steering Value: " << steer_value << std::endl;
+          //std::cout << report_events << std::endl;
+          event_count += 1;
 
-          json msgJson;
-          msgJson["steering_angle"] = steer_value;
-          msgJson["throttle"] = 0.3;
-          auto msg = "42[\"steer\"," + msgJson.dump() + "]";
-          std::cout << msg << std::endl;
-          ws.send(msg.data(), msg.length(), uWS::OpCode::TEXT);
+          if(event_count > num_events_before_twiddle && !pid.twiddle_converged){
+            string msg = "42[\"reset\",{}]";
+            cte_sum /= ((double)num_events_before_twiddle/2);
+            double prev_best = pid.best_err;
+            pid.updateTwiddle(cte_sum);
+            ws.send(msg.data(), msg.length(), uWS::OpCode::TEXT);
+            std::cout << "Best err:" << pid.best_err << " Curr err: " << cte_sum << std::endl;
+            event_count = 0;
+            cte_sum = 0;
+            int_cte = 0;
+            prev_cte = 0;
+            if(prev_best > pid.best_err){
+              num_events_before_twiddle += (int)(num_events_before_twiddle * 0.02);
+            }
+            
+          }
+          else{
+            json msgJson;
+            msgJson["steering_angle"] = steer_value;
+            msgJson["throttle"] = 0.3;
+            auto msg = "42[\"steer\"," + msgJson.dump() + "]";
+            //std::cout << msg << std::endl;
+            ws.send(msg.data(), msg.length(), uWS::OpCode::TEXT);
+          }
+          
         }  // end "telemetry" if
       } else {
         // Manual driving
